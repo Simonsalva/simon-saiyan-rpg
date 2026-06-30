@@ -2809,6 +2809,9 @@ function checkSchedule() {
   });
 }
 
+// URL del servidor de push (Cloudflare Worker)
+var PUSH_SERVER = "https://saiyan-push.simonsalvamunoz.workers.dev";
+
 function enableNotifications() {
   if (!("Notification" in window)) {
     showToast("Tu navegador no soporta notificaciones", "error");
@@ -2817,13 +2820,49 @@ function enableNotifications() {
   Notification.requestPermission().then(function(perm) {
     updateNotifPrompt();
     if (perm === "granted") {
-      showToast("🔔 Notificaciones activadas");
-      try {
-        new Notification("⚡ THE SYSTEM", { body: "Notificaciones activadas. El Sistema te avisará a la hora de cada misión.", tag: "saiyan-test" });
-      } catch(e) {}
+      showToast("🔔 Activando notificaciones…");
+      subscribeToPush();
     } else if (perm === "denied") {
       showToast("Notificaciones bloqueadas. Actívalas en ajustes del navegador.", "error");
     }
+  });
+}
+
+function urlBase64ToUint8Array(base64String) {
+  var padding = "=".repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  var raw = atob(base64);
+  var arr = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function subscribeToPush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    showToast("Este dispositivo no soporta push", "error");
+    return;
+  }
+  navigator.serviceWorker.ready.then(function(reg) {
+    return fetch(PUSH_SERVER + "/key").then(function(r){ return r.json(); }).then(function(data) {
+      var appKey = urlBase64ToUint8Array(data.publicKey);
+      return reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appKey
+      });
+    }).then(function(sub) {
+      return fetch(PUSH_SERVER + "/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub)
+      });
+    }).then(function(){
+      showToast("🔔 ¡Suscrito! El Sistema ya puede avisarte aunque cierres la app.");
+      try {
+        new Notification("⚡ THE SYSTEM", { body: "Notificaciones activadas, Simón.", tag: "saiyan-test" });
+      } catch(e) {}
+    });
+  }).catch(function(e) {
+    showToast("Error al suscribir: " + (e && e.message || e), "error");
   });
 }
 
